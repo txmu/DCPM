@@ -1,3 +1,5 @@
+# dcpm_core.py
+
 import hashlib
 import time
 import os
@@ -5,17 +7,20 @@ import aiofiles
 import asyncio
 import aiohttp
 from collections import namedtuple
-import btporrent  
-import ipfshttpclient 
+import btporrent
+import ipfshttpclient
 import struct
+
 
 def get_software_id(name):
     """根据软件名称计算软件 ID"""
     return hashlib.sha256(name.encode()).hexdigest()
 
+
 def get_package_id(name, source):
     """根据软件名称和信任源计算包 ID"""
     return hashlib.sha256(f"{name}@{source}".encode()).hexdigest()
+
 
 def get_version_id(name, source, version, parent_version=None):
     """根据软件名称、信任源、版本号和上游版本计算版本 ID"""
@@ -25,9 +30,9 @@ def get_version_id(name, source, version, parent_version=None):
         content = f"{name}@{source}:{version}"
     return hashlib.sha256(content.encode()).hexdigest()
 
-# DHT 节点的列表
-DHT_NODES = ["http://node1.example.com",/ "http://node2.example.com"]
 
+# DHT 节点的列表
+DHT_NODES = ["http://node1.example.com", "http://node2.example.com"]
 
 
 class DHTNode:
@@ -43,7 +48,9 @@ class DHTNode:
                 async with session.get(url) as response:
                     return await response.text()
         elif self.protocol == "udp":
-            reader, writer = await asyncio.open_connection(self.node_url.split("://")[1], 8001)
+            reader, writer = await asyncio.open_connection(
+                self.node_url.split("://")[1], 8001
+            )
             message = struct.pack("!16s%ds" % len(value), key.encode(), value.encode())
             writer.write(message)
             await writer.drain()
@@ -52,7 +59,9 @@ class DHTNode:
             await writer.wait_closed()
             return data.decode()
         elif self.protocol == "tcp":
-            reader, writer = await asyncio.open_connection(self.node_url.split("://")[1], 8002)
+            reader, writer = await asyncio.open_connection(
+                self.node_url.split("://")[1], 8002
+            )
             message = struct.pack("!16s%ds" % len(value), key.encode(), value.encode())
             writer.write(message)
             await writer.drain()
@@ -70,7 +79,9 @@ class DHTNode:
                 async with session.get(url) as response:
                     return await response.text()
         elif self.protocol == "udp":
-            reader, writer = await asyncio.open_connection(self.node_url.split("://")[1], 8001)
+            reader, writer = await asyncio.open_connection(
+                self.node_url.split("://")[1], 8001
+            )
             message = struct.pack("!16s", key.encode())
             writer.write(message)
             await writer.drain()
@@ -79,7 +90,9 @@ class DHTNode:
             await writer.wait_closed()
             return data.decode()
         elif self.protocol == "tcp":
-            reader, writer = await asyncio.open_connection(self.node_url.split("://")[1], 8002)
+            reader, writer = await asyncio.open_connection(
+                self.node_url.split("://")[1], 8002
+            )
             message = struct.pack("!16s", key.encode())
             writer.write(message)
             await writer.drain()
@@ -92,7 +105,9 @@ class DHTNode:
 
     async def put_file(self, file_id, file_data):
         """分块存储文件到DHT"""
-        blocks = [file_data[i:i+BLOCK_SIZE] for i in range(0, len(file_data), BLOCK_SIZE)]
+        blocks = [
+            file_data[i : i + BLOCK_SIZE] for i in range(0, len(file_data), BLOCK_SIZE)
+        ]
         block_hashes = []
         for i, block in enumerate(blocks):
             block_hash = hashlib.sha256(block).hexdigest()
@@ -114,13 +129,13 @@ class DHTNode:
         return file_data
 
 
-
 async def put_metadata(key, value):
     tasks = []
     for node_url in DHT_NODES:
         node = DHTNode(node_url)
         tasks.append(asyncio.create_task(node.put(key, value)))
     await asyncio.gather(*tasks)
+
 
 async def get_metadata(key):
     for node_url in DHT_NODES:
@@ -130,9 +145,11 @@ async def get_metadata(key):
             return value
     return None
 
+
 BLOCK_SIZE = 1024 * 1024  # 1MB
 
 FileChecksum = namedtuple("FileChecksum", ["md5", "sha1", "sha256", "crc32"])
+
 
 class Package:
     def __init__(self, name, version, files, package_manager, dependencies=None):
@@ -166,16 +183,18 @@ class Package:
             "dependencies": self.dependencies,
             "files": {},
             "checksums": self.checksums,
-            "signature": sign_data(str(self), private_key_pem)
+            "signature": sign_data(str(self), private_key_pem),
         }
 
         for file_path, file_data in self.files.items():
-            file_id = hashlib.sha256(f"{self.package_id}:{file_path}".encode()).hexdigest()
+            file_id = hashlib.sha256(
+                f"{self.package_id}:{file_path}".encode()
+            ).hexdigest()
             block_hashes = await DHTNode(DHT_NODES[0]).put_file(file_id, file_data)
             package_data["files"][file_path] = {
                 "id": file_id,
                 "size": len(file_data),
-                "block_hashes": block_hashes
+                "block_hashes": block_hashes,
             }
 
         # 将软件包元数据添加到区块链
@@ -193,7 +212,9 @@ class Package:
 
             # 验证软件包签名
             public_key = serialization.load_pem_public_key(public_key_pem)
-            if not verify_signature(str(package_data), package_data["signature"], public_key):
+            if not verify_signature(
+                str(package_data), package_data["signature"], public_key
+            ):
                 print("软件包签名验证失败")
                 return
 
@@ -288,97 +309,90 @@ class TrustSource:
     def __repr__(self):
         return f"TrustSource('{self.name}', '{self.domain}', '{self.pubkey}')"
 
+
 class TrustDomain:
-   def __init__(self, name, parent=None):
-       self.name = name
-       self.parent = parent
-       self.subtrustdomains = []
-       self.trust_sources = []
-       self.primary_providers = []
-       self.secondary_allowlist = []
-       self.secondary_blocklist = []
+    def __init__(self, name, parent=None):
+        self.name = name
+        self.parent = parent
+        self.subtrustdomains = []
+        self.trust_sources = []
+        self.primary_providers = []
+        self.secondary_allowlist = []
+        self.secondary_blocklist = []
 
-       # 生成RSA密钥对
-       private_key = rsa.generate_private_key(
-           public_exponent=65537,
-           key_size=2048,
-           backend=None
-       )
-       public_key = private_key.public_key()
+        # 生成RSA密钥对
+        private_key = rsa.generate_private_key(
+            public_exponent=65537, key_size=2048, backend=None
+        )
+        public_key = private_key.public_key()
 
-       # 将公钥和私钥序列化为PEM格式
-       self.public_key_pem = public_key.public_bytes(
-           encoding=serialization.Encoding.PEM,
-           format=serialization.PublicFormat.SubjectPublicKeyInfo
-       )
-       self.private_key_pem = private_key.private_bytes(
-           encoding=serialization.Encoding.PEM,
-           format=serialization.PrivateFormat.TraditionalOpenSSL,
-           encryption_algorithm=serialization.NoEncryption()
-       )
+        # 将公钥和私钥序列化为PEM格式
+        self.public_key_pem = public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        self.private_key_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
 
-   def add_primary_provider(self, provider):
-       self.primary_providers.append(provider)
+    def add_primary_provider(self, provider):
+        self.primary_providers.append(provider)
 
-   def add_secondary_to_allowlist(self, provider):
-       self.secondary_allowlist.append(provider)
+    def add_secondary_to_allowlist(self, provider):
+        self.secondary_allowlist.append(provider)
 
-   def add_secondary_to_blocklist(self, provider):
-       self.secondary_blocklist.append(provider)
+    def add_secondary_to_blocklist(self, provider):
+        self.secondary_blocklist.append(provider)
 
-   def add_subtrustdomain(self, subtrustdomain):
-       self.subtrustdomains.append(subtrustdomain)
+    def add_subtrustdomain(self, subtrustdomain):
+        self.subtrustdomains.append(subtrustdomain)
 
-   def add_trust_source(self, trust_source):
-       self.trust_sources.append(trust_source)
+    def add_trust_source(self, trust_source):
+        self.trust_sources.append(trust_source)
 
-   def sign_data(self, data):
-       """使用私钥对数据进行数字签名"""
-       private_key = serialization.load_pem_private_key(
-           self.private_key_pem,
-           password=None,
-           backend=None
-       )
-       signature = private_key.sign(
-           data.encode(),
-           padding.PSS(
-               mgf=padding.MGF1(hashes.SHA256()),
-               salt_length=padding.PSS.MAX_LENGTH
-           ),
-           hashes.SHA256()
-       )
-       return signature
+    def sign_data(self, data):
+        """使用私钥对数据进行数字签名"""
+        private_key = serialization.load_pem_private_key(
+            self.private_key_pem, password=None, backend=None
+        )
+        signature = private_key.sign(
+            data.encode(),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256(),
+        )
+        return signature
 
-   def verify_data(self, data, signature):
-       """使用公钥验证数字签名"""
-       public_key = serialization.load_pem_public_key(
-           self.public_key_pem,
-           backend=None
-       )
-       try:
-           public_key.verify(
-               signature,
-               data.encode(),
-               padding.PSS(
-                   mgf=padding.MGF1(hashes.SHA256()),
-                   salt_length=padding.PSS.MAX_LENGTH
-               ),
-               hashes.SHA256()
-           )
-           return True
-       except Exception:
-           return False
+    def verify_data(self, data, signature):
+        """使用公钥验证数字签名"""
+        public_key = serialization.load_pem_public_key(
+            self.public_key_pem, backend=None
+        )
+        try:
+            public_key.verify(
+                signature,
+                data.encode(),
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH,
+                ),
+                hashes.SHA256(),
+            )
+            return True
+        except Exception:
+            return False
 
-   def __str__(self):
-       if self.parent:
-           return f"{self.parent}.{self.name}"
-       else:
-           return self.name
+    def __str__(self):
+        if self.parent:
+            return f"{self.parent}.{self.name}"
+        else:
+            return self.name
 
-   def __repr__(self):
-       return f"TrustDomain('{self.name}', parent={self.parent})"
-
-
+    def __repr__(self):
+        return f"TrustDomain('{self.name}', parent={self.parent})"
 
 
 class Domain:
@@ -391,7 +405,7 @@ class Domain:
         self.secondary_allowlist = []
         self.secondary_blocklist = []
         # 创建对应的 TrustDomain 对象
-        self.trust_domain = TrustDomain(name, parent)            
+        self.trust_domain = TrustDomain(name, parent)
 
     def add_primary_provider(self, provider):
         self.primary_providers.append(provider)
@@ -431,30 +445,34 @@ class TrustProvider:
 
     def __repr__(self):
         return f"TrustProvider('{self.name}', '{self.domain}', '{self.pubkey}', '{self.type}')"
-        
-        
+
+
 def is_primary_provider_trusted(domain, provider):
     return provider in domain.primary_providers
+
 
 def is_secondary_provider_allowed(domain, provider, strict_mode=False):
     if strict_mode:
         return provider in domain.secondary_allowlist
     else:
-        return provider not in domain.secondary_blocklist 
-    
+        return provider not in domain.secondary_blocklist
+
+
 async def verify_package_providers(package):
     # 验证第一类提供者
     if not is_primary_provider_trusted(package.source_domain, package.primary_provider):
         return False
-    
+
     # 验证第二类提供者
     for provider in package.secondary_providers:
-        if not is_secondary_provider_allowed(package.source_domain, provider, strict_mode=True):
+        if not is_secondary_provider_allowed(
+            package.source_domain, provider, strict_mode=True
+        ):
             return False
-    
-    return True    
 
-                   
+    return True
+
+
 # 创建域
 self_domain = Domain("SELF")
 other_domain = Domain("EG_OTHER")
@@ -512,7 +530,7 @@ class Blockchain:
 
     def create_genesis_block(self):
         """创建创世区块"""
-        genesis_block = BlockHeader(0, 0, "0"*64, "0"*64)
+        genesis_block = BlockHeader(0, 0, "0" * 64, "0" * 64)
         genesis_block.hash = genesis_block.calculate_hash()
         self.chain.append(genesis_block)
 
@@ -540,7 +558,7 @@ class Blockchain:
         """验证区块链的完整性"""
         for i in range(1, len(self.chain)):
             current_header = self.chain[i]
-            prev_header = self.chain[i-1]
+            prev_header = self.chain[i - 1]
 
             # 验证区块头的哈希值
             if current_header.calculate_hash() != current_header.hash:
@@ -564,8 +582,9 @@ async def validate_package_metadata(package):
             file_path: {
                 "id": file_meta["id"],
                 "size": file_meta["size"],
-                "block_hashes": file_meta["block_hashes"]
-            } for file_path, file_meta in package.files.items()
+                "block_hashes": file_meta["block_hashes"],
+            }
+            for file_path, file_meta in package.files.items()
         },
         "checksums": package.checksums,
     }
@@ -587,63 +606,52 @@ async def validate_package_metadata(package):
 
 # 生成RSA密钥对
 private_key = rsa.generate_private_key(
-    public_exponent=65537,
-    key_size=2048,
-    backend=None
+    public_exponent=65537, key_size=2048, backend=None
 )
 public_key = private_key.public_key()
 
 # 将公钥和私钥序列化为PEM格式
 public_key_pem = public_key.public_bytes(
     encoding=serialization.Encoding.PEM,
-    format=serialization.PublicFormat.SubjectPublicKeyInfo
+    format=serialization.PublicFormat.SubjectPublicKeyInfo,
 )
 private_key_pem = private_key.private_bytes(
     encoding=serialization.Encoding.PEM,
     format=serialization.PrivateFormat.TraditionalOpenSSL,
-    encryption_algorithm=serialization.NoEncryption()
+    encryption_algorithm=serialization.NoEncryption(),
 )
 
 
 def sign_data(data, private_key_pem):
     """使用私钥对数据进行数字签名"""
     private_key = serialization.load_pem_private_key(
-        private_key_pem,
-        password=None,
-        backend=None
+        private_key_pem, password=None, backend=None
     )
     signature = private_key.sign(
         data.encode(),
         padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=padding.PSS.MAX_LENGTH
+            mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
         ),
-        hashes.SHA256()
+        hashes.SHA256(),
     )
     return signature
 
 
 def verify_signature(data, signature, public_key_pem):
     """使用公钥验证数字签名"""
-    public_key = serialization.load_pem_public_key(
-        public_key_pem,
-        backend=None
-    )
+    public_key = serialization.load_pem_public_key(public_key_pem, backend=None)
     try:
         public_key.verify(
             signature,
             data.encode(),
             padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
+                mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
             ),
-            hashes.SHA256()
+            hashes.SHA256(),
         )
         return True
     except Exception:
         return False
-
-
 
 
 class Network:
@@ -658,24 +666,25 @@ class Network:
     def set_blockchain(self, blockchain):
         self.blockchain = blockchain
 
-MAIN_NETWORK = Network(
-    "main",
-    ["http://node1.example.com",/ "http://node2.example.com"]
-)
+
+MAIN_NETWORK = Network("main", ["http://node1.example.com", "http://node2.example.com"])
 
 TEST_NETWORK = Network(
     "test",
-    ["http://testnode1.example.com",/ "http://testnode2.example.com"],
-    Blockchain()
+    ["http://testnode1.example.com", "http://testnode2.example.com"],
+    Blockchain(),
 )
 
 CURRENT_NETWORK = MAIN_NETWORK
 
+
 def get_dht_nodes():
     return CURRENT_NETWORK.dht_nodes
 
+
 def get_blockchain():
     return CURRENT_NETWORK.blockchain
+
 
 def switch_network(network_name):
     global CURRENT_NETWORK
@@ -686,10 +695,12 @@ def switch_network(network_name):
     else:
         raise ValueError(f"Invalid network name: {network_name}")
 
+
 def create_network(name, dht_nodes, blockchain=None):
     new_network = Network(name, dht_nodes, blockchain)
     setattr(sys.modules[__name__], name.upper() + "_NETWORK", new_network)
     print(f"New network '{name}' created.")
+
 
 async def put_metadata(key, value):
     tasks = []
@@ -697,6 +708,7 @@ async def put_metadata(key, value):
         node = DHTNode(node_url)
         tasks.append(asyncio.create_task(node.put(key, value)))
     await asyncio.gather(*tasks)
+
 
 async def get_metadata(key):
     for node_url in get_dht_nodes():
@@ -706,11 +718,13 @@ async def get_metadata(key):
             return value
     return None
 
+
 async def put_metadata_ipfs(key, value):
     ipfs_client = ipfshttpclient.connect()
     res = ipfs_client.add_str(value)
     ipfs_hash = res[-1]["Hash"]
     await put_metadata(key, ipfs_hash)
+
 
 async def get_metadata_ipfs(key):
     ipfs_hash = await get_metadata(key)
@@ -725,11 +739,13 @@ async def start_bt_seeding(torrent_hash, value):
     torrent = btporrent.get_torrent(torrent_hash)
     torrent.start_seeding(value)
 
+
 async def put_metadata_bt(key, value):
     torrent = btporrent.create_torrent(value)
     torrent_hash = torrent.info_hash
     await put_metadata(key, torrent_hash)
     await start_bt_seeding(torrent_hash, value)
+
 
 async def get_metadata_bt(key):
     torrent_hash = await get_metadata(key)
@@ -738,7 +754,6 @@ async def get_metadata_bt(key):
         value = await torrent.download()
         return value
     return None
-    
-    
-    
+
+
 blockchain = Blockchain()
