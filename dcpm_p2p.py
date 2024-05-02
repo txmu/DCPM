@@ -198,7 +198,7 @@ class P2PNode:
 
 
 
-    async def download_package(self, package_id):
+    async def oldest_download_package(self, package_id):
         """从网络下载软件包"""
         package_data_str = await self.dht.get(package_id)
         if package_data_str:
@@ -345,132 +345,132 @@ class P2PNode:
 
         return package_content
 
-async def download_file(self, file_id, block_hashes):
-    """从DHT下载文件,支持断点续传"""
-    file_data = b""
-    downloaded_blocks = set()
-    for block_hash in block_hashes:
-        if block_hash not in self.download_progress[file_id]:
-            block_data = await self.dht.get_block(block_hash)
-            if block_data:
-                file_data += block_data
-                self.download_progress[file_id][block_hash] = len(block_data)
+    async def download_file(self, file_id, block_hashes):
+        """从DHT下载文件,支持断点续传"""
+        file_data = b""
+        downloaded_blocks = set()
+        for block_hash in block_hashes:
+            if block_hash not in self.download_progress[file_id]:
+                block_data = await self.dht.get_block(block_hash)
+                if block_data:
+                    file_data += block_data
+                    self.download_progress[file_id][block_hash] = len(block_data)
+                    downloaded_blocks.add(block_hash)
+                else:
+                    print(f"无法下载数据块 {block_hash}")
+                    break
+            else:
+                file_data += self.download_progress[file_id][block_hash]
                 downloaded_blocks.add(block_hash)
-            else:
-                print(f"无法下载数据块 {block_hash}")
-                break
+
+        if len(downloaded_blocks) == len(block_hashes):
+            return file_data
         else:
-            file_data += self.download_progress[file_id][block_hash]
-            downloaded_blocks.add(block_hash)
+            # 重新下载未完成的块
+            for block_hash in set(block_hashes) - downloaded_blocks:
+                block_data = await self.dht.get_block(block_hash)
+                if block_data:
+                    file_data += block_data
+                    self.download_progress[file_id][block_hash] = len(block_data)
+                else:
+                    print(f"无法下载数据块 {block_hash}")
+                    return None
 
-    if len(downloaded_blocks) == len(block_hashes):
-        return file_data
-    else:
-        # 重新下载未完成的块
-        for block_hash in set(block_hashes) - downloaded_blocks:
-            block_data = await self.dht.get_block(block_hash)
-            if block_data:
-                file_data += block_data
-                self.download_progress[file_id][block_hash] = len(block_data)
+            return file_data
+
+    async def download_package_content(self, package_data):
+        """下载软件包内容,支持断点续传"""
+        package_content = b""
+        downloaded_blocks = set()
+        block_size = 1024 * 1024  # 1MB
+        package_content_str = package_data["content"]
+        block_hashes = [hashlib.sha256(package_content_str[i:i+block_size].encode()).hexdigest()
+                        for i in range(0, len(package_content_str), block_size)]
+    
+        for block_hash in block_hashes:
+            if block_hash not in self.download_progress[package_data["id"]]:
+                block_data = await self.dht.get_block(block_hash)
+                if block_data:
+                    package_content += block_data
+                    self.download_progress[package_data["id"]][block_hash] = len(block_data)
+                    downloaded_blocks.add(block_hash)
+                else:
+                    print(f"无法下载数据块 {block_hash}")
+                    break
             else:
-                print(f"无法下载数据块 {block_hash}")
-                return None
-
-        return file_data
-
-async def download_package_content(self, package_data):
-    """下载软件包内容,支持断点续传"""
-    package_content = b""
-    downloaded_blocks = set()
-    block_size = 1024 * 1024  # 1MB
-    package_content_str = package_data["content"]
-    block_hashes = [hashlib.sha256(package_content_str[i:i+block_size].encode()).hexdigest()
-                    for i in range(0, len(package_content_str), block_size)]
-
-    for block_hash in block_hashes:
-        if block_hash not in self.download_progress[package_data["id"]]:
-            block_data = await self.dht.get_block(block_hash)
-            if block_data:
-                package_content += block_data
-                self.download_progress[package_data["id"]][block_hash] = len(block_data)
+                package_content += self.download_progress[package_data["id"]][block_hash]
                 downloaded_blocks.add(block_hash)
-            else:
-                print(f"无法下载数据块 {block_hash}")
-                break
+    
+        if len(downloaded_blocks) == len(block_hashes):
+            return package_content
         else:
-            package_content += self.download_progress[package_data["id"]][block_hash]
-            downloaded_blocks.add(block_hash)
+            # 重新下载未完成的块
+            for block_hash in set(block_hashes) - downloaded_blocks:
+                block_data = await self.dht.get_block(block_hash)
+                if block_data:
+                    package_content += block_data
+                    self.download_progress[package_data["id"]][block_hash] = len(block_data)
+                else:
+                    print(f"无法下载数据块 {block_hash}")
+                    return None
 
-    if len(downloaded_blocks) == len(block_hashes):
-        return package_content
-    else:
-        # 重新下载未完成的块
-        for block_hash in set(block_hashes) - downloaded_blocks:
-            block_data = await self.dht.get_block(block_hash)
-            if block_data:
-                package_content += block_data
-                self.download_progress[package_data["id"]][block_hash] = len(block_data)
-            else:
-                print(f"无法下载数据块 {block_hash}")
-                return None
+            return package_content
 
-        return package_content
-
-async def download_package(self, package_id):
-    """从网络下载软件包,支持分块与断点续传"""
-    package_data_str = await self.dht.get(package_id)
-    if package_data_str:
-        package_data = eval(package_data_str)
-
-        # 验证软件包签名
-        public_key = serialization.load_pem_public_key(self.public_key_pem)
-        if not verify_signature(str(package_data), package_data["signature"], public_key):
-            print("软件包签名验证失败")
-            return
-
-        # 下载软件包内容
-        package_content = await self.download_package_content(package_data)
-        if not package_content:
-            print("无法下载软件包内容")
-            return
-
-        # 下载软件包文件
-        self.packages[package_id] = {}
-        for file_path, file_meta in package_data["files"].items():
-            file_id = file_meta["id"]
-            block_hashes = file_meta["block_hashes"]
-            file_data = await self.download_file(file_id, block_hashes)
-            if file_data:
-                self.packages[package_id][file_path] = file_data
-            else:
-                print(f"无法下载文件 {file_path}")
+    async def download_package(self, package_id):
+        """从网络下载软件包,支持分块与断点续传"""
+        package_data_str = await self.dht.get(package_id)
+        if package_data_str:
+            package_data = eval(package_data_str)
+    
+            # 验证软件包签名
+            public_key = serialization.load_pem_public_key(self.public_key_pem)
+            if not verify_signature(str(package_data), package_data["signature"], public_key):
+                print("软件包签名验证失败")
                 return
 
-        # 验证文件校验和
-        for file_path, checksums in package_data["checksums"].items():
-            if checksums != calculate_checksums(self.packages[package_id][file_path]):
-                print(f"文件 {file_path} 校验和不匹配")
+            # 下载软件包内容
+            package_content = await self.download_package_content(package_data)
+            if not package_content:
+                print("无法下载软件包内容")
                 return
 
-        # 验证区块链上的软件包元数据
-        if not await self.validate_package_metadata(package_data):
-            print("软件包元数据验证失败")
-            return
+            # 下载软件包文件
+            self.packages[package_id] = {}
+            for file_path, file_meta in package_data["files"].items():
+                file_id = file_meta["id"]
+                block_hashes = file_meta["block_hashes"]
+                file_data = await self.download_file(file_id, block_hashes)
+                if file_data:
+                    self.packages[package_id][file_path] = file_data
+                else:
+                    print(f"无法下载文件 {file_path}")
+                    return
 
-        # 创建软件包对象
-        package = Package(
-            package_data["name"],
-            package_data["version"],
-            package_content.decode(),
-            self.packages[package_id],
-            package_data["package_manager"],
-            package_data["dependencies"]
-        )
+            # 验证文件校验和
+            for file_path, checksums in package_data["checksums"].items():
+                if checksums != calculate_checksums(self.packages[package_id][file_path]):
+                    print(f"文件 {file_path} 校验和不匹配")
+                    return
 
-        return package
-    else:
-        print(f"无法找到软件包 {package_id}")
-        return None
+            # 验证区块链上的软件包元数据
+            if not await self.validate_package_metadata(package_data):
+                print("软件包元数据验证失败")
+                return
+    
+            # 创建软件包对象
+            package = Package(
+                package_data["name"],
+                package_data["version"],
+                package_content.decode(),
+                self.packages[package_id],
+                package_data["package_manager"],
+                package_data["dependencies"]
+            )
+    
+            return package
+        else:
+            print(f"无法找到软件包 {package_id}")
+            return None
         
         
     async def validate_package_metadata(self, package):
