@@ -31,7 +31,15 @@ def parse_args():
 
 async def main():
     # ... 其他代码保持不变 ...
+    args = parse_args()
+    tls_cert = args.tls_cert
+    tls_key = args.tls_key
+    node = P2PNode("0.0.0.0", 9000, public_key_pem, private_key_pem, tls_cert, tls_key)
+    await node.start()
 
+    package_version_manager = PackageVersionManager()
+    
+    
     if args.publish:
         package_path = args.publish
         package = Package.from_file(package_path)
