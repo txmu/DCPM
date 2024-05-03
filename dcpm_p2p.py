@@ -19,6 +19,34 @@ from libp2p.routing.kademlia_dht import KademliaDHT
 from libp2p.discovery.mdns import MulticastDNSService
 from dcpm_core import Package, get_package_id, calculate_checksums
 import dnscrypt_python
+import math
+
+def calculate_distance(node1, node2):
+    """
+    计算两个节点之间的距离.
+    
+    Args:
+        node1 (Node): 第一个节点.
+        node2 (Node): 第二个节点.
+        
+    Returns:
+        int: 两个节点之间的距离.
+    """
+    # 将节点 ID 转换为整数
+    node1_id_int = int(node1.node_id, 16)
+    node2_id_int = int(node2.node_id, 16)
+    
+    # 计算节点 ID 的 XOR
+    xor_value = node1_id_int ^ node2_id_int
+    
+    # 计算 XOR 值中最高位的位置
+    highest_bit = math.floor(math.log(xor_value, 2)) + 1
+    
+    # 距离为 2^(最高位编号)
+    distance = 2 ** (highest_bit)
+    
+    return distance
+    
 
 
 # TLS支持
