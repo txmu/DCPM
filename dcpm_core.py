@@ -10,6 +10,7 @@ from collections import namedtuple
 import btporrent
 import ipfshttpclient
 import struct
+import pickle
 
 
 def get_software_id(name):
@@ -173,6 +174,32 @@ class Package:
             sha256 = hashlib.sha256(file_data).hexdigest()
             crc32 = binascii.crc32(file_data).hexdigest()
             self.checksums[file_path] = FileChecksum(md5, sha1, sha256, crc32)
+
+    def to_bytes(self):
+        """将软件包对象序列化为字节流"""
+        data = {
+            "name": self.name,
+            "version": self.version,
+            "files": self.files,
+            "package_manager": self.package_manager,
+            "dependencies": self.dependencies,
+            "checksums": self.checksums,
+        }
+        return pickle.dumps(data)
+
+    @classmethod
+    def from_bytes(cls, data):
+        """从字节流反序列化软件包对象"""
+        package_data = pickle.loads(data)
+        package = cls(
+            package_data["name"],
+            package_data["version"],
+            package_data["files"],
+            package_data["package_manager"],
+            package_data["dependencies"],
+        )
+        package.checksums = package_data["checksums"]
+        return package
 
     async def publish(self):
         """发布软件包到网络"""

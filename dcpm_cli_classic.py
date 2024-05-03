@@ -1,5 +1,4 @@
-# dcpm_cli.py
-
+# dcpm_cli_classic.py
 
 import argparse
 import asyncio
@@ -30,16 +29,22 @@ def parse_args():
 
 
 async def main():
-    # ... 其他代码保持不变 ...
+    args = parse_args()
+    tls_cert = args.tls_cert
+    tls_key = args.tls_key
+    node = P2PNode("0.0.0.0", 9000, public_key_pem, private_key_pem, tls_cert, tls_key)
+    await node.start()
+
+    package_version_manager = PackageVersionManager()
 
     if args.publish:
         package_path = args.publish
         package = Package.from_file(package_path)
-        await node.send_publish_request(package)
+        await node.publish_package(package)
 
     elif args.download:
         package_id = args.download
-        package = await node.send_download_request(package_id)
+        package = await node.download_package(package_id)
         if package:
             package_version_manager.add_package(package)
             package.save_to_file()
@@ -50,7 +55,6 @@ async def main():
         package_version_manager.add_package(package)
 
         if args.dep_mode == "suggest":
-            # ... 依赖解决建议代码保持不变 ...
             resolver = DependencyResolver([package])
             resolved = await resolver.resolve()
             for software_id, package_versions in resolved.items():
@@ -60,9 +64,9 @@ async def main():
                     )
         elif args.dep_mode == "auto":
             await package_version_manager.resolve_dependencies([package])
-            await node.send_install_request(package)
+            await package_version_manager.install(package.software_id)
         else:
-            await node.send_install_request(package)
+            await package.install()
 
     elif args.remove:
         package_name = args.remove
@@ -71,7 +75,6 @@ async def main():
 
         if package:
             if args.dep_mode == "suggest":
-                # ... 依赖解决建议代码保持不变 ...
                 resolver = DependencyResolver(package.versions)
                 resolved = await resolver.resolve()
                 for software_id, package_versions in resolved.items():
@@ -81,13 +84,12 @@ async def main():
                         )
             elif args.dep_mode == "auto":
                 await package_version_manager.resolve_dependencies(package.versions)
-                await node.send_uninstall_request(package_name)
+                await package_version_manager.uninstall(software_id)
             else:
-                await node.send_uninstall_request(package_name)
+                await Package.uninstall(package_name)
         else:
             print(f"无法找到软件包 {package_name}")
 
-    # ... 其他代码保持不变 ...
     elif args.fork:
         package_id = args.fork
         package = package_version_manager.get_package(package_id)
